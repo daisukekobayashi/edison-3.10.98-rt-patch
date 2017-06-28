@@ -1,0 +1,7 @@
+--- /sound/soc/intel/sst/sst.c
++++ /sound/soc/intel/sst/sst.c
+@@ -955,3 +955,3 @@
+ 	spin_lock_irqsave(&ctx->ipc_spin_lock, irq_flags);
+-	sst_shim_write64(shim, SST_IMRX, shim_regs->imrx),
++	sst_shim_write64(shim, SST_IMRX, shim_regs->imrx);
+ 	spin_unlock_irqrestore(&ctx->ipc_spin_lock, irq_flags);

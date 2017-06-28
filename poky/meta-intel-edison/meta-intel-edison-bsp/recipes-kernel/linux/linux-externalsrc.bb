@@ -1,3 +1,4 @@
+FILESEXTRAPATHS_prepend := "${THISDIR}/files:"
 LICENSE = "GPLv2"
 LIC_FILES_CHKSUM = "file://COPYING;md5=d7810fab7487fb0aad327b76f1be7cd7"
 
@@ -7,7 +8,10 @@ require recipes-kernel/linux/linux-yocto.inc
 # Allows to avoid fetching, unpacking and patching, since our code is already cloned by repo
 #inherit externalsrc
 
-SRC_URI = "git://github.com/01org/edison-linux.git;protocol=https;branch=edison-3.10.98"
+SRC_URI += "git://github.com/01org/edison-linux.git;protocol=https;branch=edison-3.10.98"
+SRC_URI += "file://patch-3.10.98-rt120_edison.patch"
+SRC_URI += "file://intel_mid_rpmsg.c.patch"
+SRC_URI += "file://sst.c.patch"
 SRCREV = "edison-3.10.98"
 
 # Don't use Yocto kernel configuration system, we instead simply override do_configure
@@ -47,4 +51,11 @@ do_deploy() {
 
 do_kernel_configme() {
   echo "skip this option"
+}
+
+do_patch() {
+  cd ${S}
+  git apply --ignore-space-change --ignore-whitespace "${WORKDIR}/patch-3.10.98-rt120_edison.patch"
+  git apply --ignore-space-change --ignore-whitespace "${WORKDIR}/intel_mid_rpmsg.c.patch"
+  git apply --ignore-space-change --ignore-whitespace "${WORKDIR}/sst.c.patch"
 }

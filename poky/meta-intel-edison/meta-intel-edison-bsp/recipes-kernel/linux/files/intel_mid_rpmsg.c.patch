@@ -1,0 +1,15 @@
+--- /drivers/rpmsg/intel_mid_rpmsg.c
++++ /drivers/rpmsg/intel_mid_rpmsg.c
+@@ -103,7 +103,11 @@
+ 
+ #define is_global_locked_prev		(global_lock.locked_prev)
+ #define set_global_locked_prev(lock)	(global_lock.locked_prev = lock)
+-#define global_locked_by_current	(global_lock.lock.owner == current)
++#ifdef CONFIG_PREEMPT_RT_FULL
++#define global_locked_by_current	(global_lock.lock.lock.owner == current)
++#else
++#define global_locked_by_current	(global_lock.lock.owner == current)
++#endif
+ 
+ void rpmsg_global_lock(void)
+ {

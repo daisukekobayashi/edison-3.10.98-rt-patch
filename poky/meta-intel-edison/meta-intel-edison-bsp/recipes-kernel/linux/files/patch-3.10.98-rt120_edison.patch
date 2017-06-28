@@ -5395,11 +5395,12 @@ diff --git a/drivers/misc/Makefile b/drivers/misc/Makefile
 index c235d5b68311..6bb08da403e9 100644
 --- a/drivers/misc/Makefile
 +++ b/drivers/misc/Makefile
-@@ -53,3 +53,4 @@ obj-$(CONFIG_INTEL_MEI)		+= mei/
+@@ -53,4 +53,5 @@ obj-$(CONFIG_INTEL_MEI)		+= mei/
  obj-$(CONFIG_VMWARE_VMCI)	+= vmw_vmci/
  obj-$(CONFIG_LATTICE_ECP3_CONFIG)	+= lattice-ecp3-config.o
  obj-$(CONFIG_SRAM)		+= sram.o
 +obj-$(CONFIG_HWLAT_DETECTOR)	+= hwlat_detector.o
+ obj-$(CONFIG_BCM_BT_LPM)	+=bcm-lpm/
 diff --git a/drivers/misc/hwlat_detector.c b/drivers/misc/hwlat_detector.c
 new file mode 100644
 index 000000000000..d2676b867e41
@@ -7531,16 +7532,16 @@ diff --git a/drivers/usb/core/hcd.c b/drivers/usb/core/hcd.c
 index cbfd3d14fa5a..fced7b63a40f 100644
 --- a/drivers/usb/core/hcd.c
 +++ b/drivers/usb/core/hcd.c
-@@ -2223,7 +2223,7 @@ irqreturn_t usb_hcd_irq (int irq, void *__hcd)
+@@ -2228,7 +2228,7 @@ irqreturn_t usb_hcd_irq (int irq, void *__hcd)
  	 * when the first handler doesn't use it.  So let's just
  	 * assume it's never used.
  	 */
 -	local_irq_save(flags);
 +	local_irq_save_nort(flags);
  
- 	if (unlikely(HCD_DEAD(hcd) || !HCD_HW_ACCESSIBLE(hcd)))
+ 	if (unlikely(HCD_DEAD(hcd)))
  		rc = IRQ_NONE;
-@@ -2232,7 +2232,7 @@ irqreturn_t usb_hcd_irq (int irq, void *__hcd)
+@@ -2251,7 +2251,7 @@ irqreturn_t usb_hcd_irq (int irq, void *__hcd)
  	else
  		rc = IRQ_HANDLED;
  
@@ -8681,11 +8682,13 @@ index d591bfe1475b..7f62bdaec89f 100644
   */
  enum {
  	IRQ_TYPE_NONE		= 0x00000000,
-@@ -94,12 +95,14 @@ enum {
+@@ -94,13 +95,15 @@ enum {
  	IRQ_NESTED_THREAD	= (1 << 15),
  	IRQ_NOTHREAD		= (1 << 16),
  	IRQ_PER_CPU_DEVID	= (1 << 17),
 +	IRQ_NO_SOFTIRQ_CALL	= (1 << 18),
+-	IRQ_CHAINED		= (1 << 18),
++	IRQ_CHAINED		= (1 << 19),
  };
  
  #define IRQF_MODIFY_MASK	\
@@ -14762,23 +14765,25 @@ diff --git a/kernel/irq/settings.h b/kernel/irq/settings.h
 index 1162f1030f18..0d2c381c2bdb 100644
 --- a/kernel/irq/settings.h
 +++ b/kernel/irq/settings.h
-@@ -14,6 +14,7 @@ enum {
+@@ -14,7 +14,8 @@ enum {
  	_IRQ_NO_BALANCING	= IRQ_NO_BALANCING,
  	_IRQ_NESTED_THREAD	= IRQ_NESTED_THREAD,
  	_IRQ_PER_CPU_DEVID	= IRQ_PER_CPU_DEVID,
 +	_IRQ_NO_SOFTIRQ_CALL	= IRQ_NO_SOFTIRQ_CALL,
  	_IRQF_MODIFY_MASK	= IRQF_MODIFY_MASK,
+ 	_IRQ_CHAINED		= IRQ_CHAINED,
  };
  
-@@ -26,6 +27,7 @@ enum {
+@@ -27,7 +28,8 @@ enum {
  #define IRQ_NOAUTOEN		GOT_YOU_MORON
  #define IRQ_NESTED_THREAD	GOT_YOU_MORON
  #define IRQ_PER_CPU_DEVID	GOT_YOU_MORON
 +#define IRQ_NO_SOFTIRQ_CALL	GOT_YOU_MORON
  #undef IRQF_MODIFY_MASK
  #define IRQF_MODIFY_MASK	GOT_YOU_MORON
+ #define IRQ_CHAINED		GOT_YOU_MORON
  
-@@ -36,6 +38,16 @@ irq_settings_clr_and_set(struct irq_desc *desc, u32 clr, u32 set)
+@@ -38,6 +40,16 @@ irq_settings_clr_and_set(struct irq_desc *desc, u32 clr, u32 set)
  	desc->status_use_accessors |= (set & _IRQF_MODIFY_MASK);
  }
  
@@ -15831,7 +15836,7 @@ index ee8f6be7d8a9..efa9ac4ab617 100644
  }
  
  /*
-@@ -1348,12 +1380,18 @@ static inline int can_use_console(unsigned int cpu)
+@@ -1355,12 +1387,18 @@ static inline int can_use_console(unsigned int cpu)
   * interrupts disabled. It should return with 'lockbuf_lock'
   * released but interrupts still disabled.
   */
@@ -15847,12 +15852,12 @@ index ee8f6be7d8a9..efa9ac4ab617 100644
 +	int lock = 1;
 +#endif
  
--	if (console_trylock()) {
-+	if (lock && console_trylock()) {
+-	if (!in_nmi() && console_trylock()) {
++	if (!in_nmi() && lock && console_trylock()) {
  		retval = 1;
  
  		/*
-@@ -1493,6 +1531,62 @@ static size_t cont_print_text(char *text, size_t size)
+@@ -1500,6 +1538,62 @@ static size_t cont_print_text(char *text, size_t size)
  	return textlen;
  }
  
@@ -15915,7 +15920,7 @@ index ee8f6be7d8a9..efa9ac4ab617 100644
  asmlinkage int vprintk_emit(int facility, int level,
  			    const char *dict, size_t dictlen,
  			    const char *fmt, va_list args)
-@@ -1506,6 +1600,13 @@ asmlinkage int vprintk_emit(int facility, int level,
+@@ -1513,6 +1607,13 @@ asmlinkage int vprintk_emit(int facility, int level,
  	int this_cpu;
  	int printed_len = 0;
  
@@ -15929,7 +15934,7 @@ index ee8f6be7d8a9..efa9ac4ab617 100644
  	boot_delay_msec(level);
  	printk_delay();
  
-@@ -1625,8 +1726,15 @@ asmlinkage int vprintk_emit(int facility, int level,
+@@ -1638,8 +1739,15 @@ asmlinkage int vprintk_emit(int facility, int level,
  	 * The console_trylock_for_printk() function will release 'logbuf_lock'
  	 * regardless of whether it actually gets the console semaphore or not.
  	 */
@@ -15944,9 +15949,9 @@ index ee8f6be7d8a9..efa9ac4ab617 100644
 +#endif
 +	}
  
+ out_restore_lockdep_irqs:
  	lockdep_on();
- out_restore_irqs:
-@@ -1728,29 +1836,6 @@ static size_t cont_print_text(char *text, size_t size) { return 0; }
+@@ -1742,29 +1850,6 @@ static size_t cont_print_text(char *text, size_t size) { return 0; }
  
  #endif /* CONFIG_PRINTK */
  
@@ -15976,7 +15981,7 @@ index ee8f6be7d8a9..efa9ac4ab617 100644
  static int __add_preferred_console(char *name, int idx, char *options,
  				   char *brl_options)
  {
-@@ -2003,11 +2088,16 @@ static void console_cont_flush(char *text, size_t size)
+@@ -2017,11 +2102,16 @@ static void console_cont_flush(char *text, size_t size)
  		goto out;
  
  	len = cont_print_text(text, size);
@@ -15993,7 +15998,7 @@ index ee8f6be7d8a9..efa9ac4ab617 100644
  	return;
  out:
  	raw_spin_unlock_irqrestore(&logbuf_lock, flags);
-@@ -2101,13 +2191,17 @@ skip:
+@@ -2104,12 +2197,17 @@ skip:
  		console_idx = log_next(console_idx);
  		console_seq++;
  		console_prev = msg->flags;
@@ -16005,14 +16010,13 @@ index ee8f6be7d8a9..efa9ac4ab617 100644
  		call_console_drivers(level, text, len);
  		start_critical_timings();
  		local_irq_restore(flags);
--
 +#else
 +		raw_spin_unlock_irqrestore(&logbuf_lock, flags);
 +		call_console_drivers(level, text, len);
 +#endif
- 		if (do_cond_resched)
- 			cond_resched();
  	}
+ 	console_locked = 0;
+ 	mutex_release(&console_lock_dep_map, 1, _RET_IP_);
 @@ -2160,6 +2254,11 @@ void console_unblank(void)
  {
  	struct console *c;
